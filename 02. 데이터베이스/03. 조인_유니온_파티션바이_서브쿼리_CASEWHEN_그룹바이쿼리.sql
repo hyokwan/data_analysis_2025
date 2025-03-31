@@ -1,0 +1,335 @@
+CREATE TABLE TABLE_A (
+    TABKEY INT PRIMARY KEY,
+    COLA INT NULL,
+    COLB VARCHAR(10) NULL,
+    COLC INT NULL
+);
+
+
+INSERT INTO TABLE_A 
+(TABKEY, COLA, COLB, COLC) VALUES
+(1, NULL, '가', NULL),
+(2, 1, '가', 5),
+(3, NULL, '나', 2),
+(4, 3, '나', 0),
+(5, NULL, NULL, 3),
+(6, 5, '다', 0),
+(7, NULL, '다', NULL);
+
+
+
+SELECT  A.*,
+		CASE WHEN REGIONID IS NULL THEN 'DEFAULT1'
+			WHEN REGIONID = '' THEN 'DEFAULT2'
+			ELSE REGIONID END AS REGIONID_NEW
+FROM KOPO_PROMOTION A
+WHERE 1=1
+AND REGIONID IS NULL
+OR REGIONID IN ('','NA','-','NONE')
+
+
+SELECT *
+FROM JOIN_BOMB_DATA1
+
+SELECT * 
+FROM JOIN_BOMB_DATA3
+
+SELECT
+        j1.*,
+        j2.*
+FROM join_bomb_data1 j1 
+INNER JOIN join_bomb_data2 j2
+ON j1.REGION_NAME  =  j2.REGION_NAME 
+AND j1.ACCOUNT_NAME = j2.ACCOUNT_NAME
+AND j1.YEARWEEK = j2.YEARWEEK;
+
+SELECT *
+FROM join_bomb_data2
+
+select A.*,
+                B.*
+from join_bomb_data1 A
+INNER join (select REGION_NAME, ACCOUNT_NAME, YEARWEEK, PROMOTION_ID
+            from join_bomb_data2 ) B
+on A.REGION_NAME = B.region_name and A.ACCOUNT_NAME = B.ACCOUNT_NAME
+        and A.YEARWEEK = B.YEARWEEK
+       
+        
+SELECT COUNT(*)
+FROM JOIN_BOMB_DATA1
+
+-- JOIN: 조인방식 (INNER, LEFT, RIGHT, OUTER)
+--       조인키를 정확하게 설정 (데이터에대한 이해도)
+--       다중 테이블 조인 (조인결과에 추가로 조인 해가면 된다!)
+--       조인키가 안보일때 조인키를 생성해라 (Feature Engineering) EX: 헬스데이터 실제시간->시간대(오전/오후)
+SELECT A.REGION_NAME,
+	   A.ACCOUNT_NAME,
+	   A.YEARWEEK,
+	   A.QTY,
+	   B.PROMOTION_ID,
+	   C.PROMOTION_TERM,
+	   C.PROMOTION_RATIO
+FROM JOIN_BOMB_DATA1 A
+LEFT JOIN JOIN_BOMB_DATA2 B
+ON A.REGION_NAME = B.REGION_NAME
+AND A.ACCOUNT_NAME = B.ACCOUNT_NAME
+AND A.YEARWEEK = B.YEARWEEK
+LEFT JOIN JOIN_BOMB_DATA3 C
+ON B.PROMOTION_ID = C.PROMOTION_ID
+
+
+-- 데이터 통합 UNION
+-- UNION ALL , UNION 차이를 알자 둘중 한개는 중복값을 제거하는거다.
+ 
+SELECT COUNT(*)
+FROM KOPO_PRODUCT_VOLUME2
+WHERE PRODUCTGROUP = 'ST0001'
+
+-- ST0002 -> 132
+SELECT COUNT(*)
+FROM KOPO_PRODUCT_VOLUME2
+WHERE PRODUCTGROUP = 'ST0002'
+
+SELECT COUNT(*)
+FROM (
+	SELECT REGIONID, PRODUCTGROUP, YEARWEEK, VOLUME
+	FROM KOPO_PRODUCT_VOLUME2
+	WHERE PRODUCTGROUP = 'ST0001'
+	UNION ALL
+	SELECT REGIONID, PRODUCTGROUP, YEARWEEK, VOLUME
+	FROM KOPO_PRODUCT_VOLUME2
+	WHERE PRODUCTGROUP = 'ST0002'
+)B
+
+-- UNION 은 합치는데 중복을 제거하는구나!!
+-- UNION ALL은 그냥 합친다!!
+SELECT COUNT(*)
+FROM
+(
+	SELECT *
+	FROM KOPO_PRODUCT_VOLUME2
+	UNION
+	SELECT *
+	FROM KOPO_PRODUCT_VOLUME2
+)B
+ORDER BY B.REGIONID, B.PRODUCTGROUP, B.YEARWEEK
+
+
+
+-- CASE WHEN ORDER BY 절에도 활용 가능
+SELECT DISTINCT REGIONID 
+FROM KOPO_CHANNEL_SEASONALITY_NEW
+ORDER BY CASE WHEN REGIONID = 'A03' THEN 0
+		      WHEN REGIONID = 'A05' THEN 1
+		      ELSE REGIONID END 
+		      
+		      
+-- FROM 절의 서브쿼리
+SELECT COUNT(*)
+FROM
+(
+	SELECT DISTINCT REGIONID, PRODUCT
+ 	FROM KOPO_CHANNEL_SEASONALITY_NEW
+)A
+
+
+-- WHERE 절 서브쿼리 예시를 위한 테이블 생성
+
+DROP TABLE SIMULATION_PRODUCT 
+
+CREATE TABLE SIMULATION_PRODUCT(
+	PRODUCTID VARCHAR(100),
+	COMMENT VARCHAR(100)
+)
+
+INSERT INTO SIMULATION_PRODUCT
+VALUES ('PRODUCT10','기본상품'),
+       ('PRODUCT1','추가상품')
+
+       
+-- ---------------------------------------------------------------------
+-- 조인활용 통계값 붙이기 + 계절성지구 구함 + 지역, 상품, 주차별 그룹바이 하면 미래 활용 지수 생성 가능
+-- ---------------------------------------------------------------------      
+       
+-- Step1 주차와 연도를 분리한다.
+-- Step2 53주차를 제거한다.
+-- Step3 상품은 시뮬레이션 테이블 내 상품군으로 예측범위를 제한한다.
+-- Step4 실적 데이터에 지역/상품 평균 거래량 컬럼을 추가한다. (그룹바이/조인)
+
+SELECT C.*,
+	   D.AVG_QTY,
+	   C.QTY / D.AVG_QTY AS SEASONALITY
+FROM(
+	SELECT B.REGIONID,
+		B.PRODUCT,
+		B.YEARWEEK,
+		B.YEAR,
+		B.WEEK,
+		B.QTY
+	FROM
+	(
+		-- FROM 절의 서브쿼리
+		SELECT A.*,
+			SUBSTR(A.YEARWEEK, 1,4) AS YEAR,
+			SUBSTR(A.YEARWEEK, 5,2) AS WEEK
+	 	FROM KOPO_CHANNEL_SEASONALITY_NEW A
+	)B
+	WHERE B.WEEK != 53
+	-- WHERE 조건의 서브쿼리
+	AND B.PRODUCT IN (SELECT DISTINCT PRODUCTID
+	 				  FROM SIMULATION_PRODUCT)
+	) C
+LEFT JOIN ( 
+	SELECT REGIONID, 
+		   PRODUCT, 
+		   AVG(QTY) AS AVG_QTY
+	FROM KOPO_CHANNEL_SEASONALITY_NEW
+	GROUP BY REGIONID, PRODUCT
+) D
+ON C.REGIONID = D.REGIONID
+AND C.PRODUCT = D.PRODUCT
+WHERE C.PRODUCT = 'PRODUCT10'
+ORDER BY C.REGIONID, C.PRODUCT, C.YEARWEEK
+
+
+
+-- -------------------------------------------
+-- 파티션 바이 활용 통계 값 붙이기 (+ 셀렉트절의 서브쿼리)
+-- --------------------------------------------
+SELECT B.REGIONID,
+	B.PRODUCT,
+	B.YEARWEEK,
+	B.YEAR,
+	B.WEEK,
+	B.QTY,
+	-- 지역, 상품 평균 거래량을
+	AVG(QTY) OVER(PARTITION BY REGIONID, PRODUCT) as AVG_QTY,
+	AVG(QTY) OVER(PARTITION BY REGIONID, PRODUCT, YEAR) as AVG_QTY_YEAR
+-- 	( 
+-- 	  SELECT AVG(QTY)
+-- 	  FROM KOPO_CHANNEL_SEASONALITY_NEW
+-- 	  WHERE REGIONID = B.REGIONID
+-- 	  AND PRODUCT = B.PRODUCT
+-- 	  GROUP BY REGIONID, PRODUCT
+-- 	 ) AS AVG_QTY
+FROM
+(
+	-- FROM 절의 서브쿼리
+	SELECT A.*,
+		SUBSTR(A.YEARWEEK, 1,4) AS YEAR,
+		SUBSTR(A.YEARWEEK, 5,2) AS WEEK
+ 	FROM KOPO_CHANNEL_SEASONALITY_NEW A
+)B
+WHERE 1=1
+-- AND B.WEEK != 53
+-- WHERE 조건의 서브쿼리
+AND B.PRODUCT = 'PRODUCT10'
+AND B.PRODUCT IN (SELECT DISTINCT PRODUCTID
+ 				  FROM SIMULATION_PRODUCT)
+ORDER BY B.REGIONID, B.PRODUCT, B.YEARWEEK				  
+ 	
+ 
+-- WHERE 1=1
+-- -- AND B.WEEK != 53
+-- -- WHERE 조건의 서브쿼리
+-- AND B.PRODUCT = 'PRODUCT10'
+-- AND B.PRODUCT IN (SELECT DISTINCT PRODUCTID
+-- 그런데 B.PRODUCT 조건을 2개 동시에해도 되나요??
+
+
+
+
+SELECT A.*,
+        (SELECT AVG(QTY)
+        FROM KOPO_CHANNEL_SEASONALITY_NEW
+        WHERE REGIONID = A.REGIONID
+        AND PRODUCT = A.PRODUCT
+        GROUP BY A.REGIONID, A.PRODUCT) AS SUM_QTY
+FROM KOPO_CHANNEL_SEASONALITY_NEW A
+ 				  
+ 				  
+SELECT 
+	AVG(QTY)
+FROM KOPO_CHANNEL_SEASONALITY_NEW
+WHERE REGIONID, 
+GROUP BY REGIONID, PRODUCT
+
+ 				  
+ 				  
+ 				  
+ 				  
+ 				  
+ 				  
+ 				  
+
+
+
+
+
+
+
+		      
+		     
+		      
+		      
+		      
+		      
+		      
+		      
+		      
+		      
+		      
+		      
+		      
+		      
+		      
+-- UNION 실습
+KOPO_CHANNEL_SEASONALITY_NEW 의 A01 지역과 A03 지역을 따로 WHERE 조건으로 설정 후 
+UNION 하시고 추가로 같은 테이블 UNION 해서 UNION, UNION ALL COUNT 만해보기 
+
+
+
+
+
+
+
+
+
+-- SMITH, ALLEN, SCOTT
+SELECT A.*,
+	   B.*
+FROM EMP_TBL A
+INNER JOIN RULE_TBL B
+ON A.ENAME LIKE B.RULE
+
+
+D
+
+
+SELECT *
+FROM EMP_TBL
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+SELECT  *
+FROM JOIN_BOMB_DATA2
+
+
+
+
+
+
+
